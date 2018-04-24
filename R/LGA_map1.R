@@ -1,18 +1,22 @@
+usethis::use_git()
+#Income Data Link
+#http://stat.data.abs.gov.au/
+#Economy -> Finance -> Household Income -> Census 2016, Total Household Income (Weekly) by Household Composition (LGA)
+#Customise layout(): 
+#Page -  (Census Year, Household Composition)
+#Row - (State, Region, Geography Level)
+#Column : Total Household Income Weekly
+#The column "Total Household income" was split into Weekly and Annual Income in excel
 
-#Data file links
-#http://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&1270055001_sa2_2016_aust_shape.zip&1270.0.55.001&Data%20Cubes&A09309ACB3FA50B8CA257FED0013D420&0&July%202016&12.07.2016&Latest
-#http://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&1270055001_sa4_2016_aust_shape.zip&1270.0.55.001&Data%20Cubes&C65BC89E549D1CA3CA257FED0013E074&0&July%202016&12.07.2016&Latest
-#http://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&1270055001_ste_2016_aust_shape.zip&1270.0.55.001&Data%20Cubes&65819049BE2EB089CA257FED0013E865&0&July%202016&12.07.2016&Latest
-#http://www.aec.gov.au/Electorates/gis/gis_datadownload.htm
-
-# Population data set
-#http://www.abs.gov.au/ausstats/subscriber.nsf/log?openagent&32350ds0012_asgs2011_2016.xls&3235.0&Data%20Cubes&98E620F732FBA7A6CA2581870037A23F&0&2016&28.08.2017&Latest
-
+#Shapefile ESRI Data Link
+#http://www.abs.gov.au/AUSSTATS/abs@.nsf/DetailsPage/1270.0.55.003July%202016?OpenDocument
+#Name of the file (Zip) to download: Local Government Areas ASGS Ed 2016 Digital Boundaries in ESRI Shapefile Format 
 
 library(tidyverse)
+library(readr)
 
-#remane state in population dataset
-popData <- readr::read_csv('population.csv') %>%
+#remane state in Attribute Dataset
+IncomeData <- readr::read_csv('Data/Income_Data.csv') %>%
   mutate(State = case_when(
     State == 'New South Wales' ~ 'NSW',
     State == 'Victoria' ~ 'VIC',
@@ -22,42 +26,13 @@ popData <- readr::read_csv('population.csv') %>%
     State == 'Tasmania' ~ 'TAS',
     State == 'Northern Territory' ~ 'NT',
     State == 'Australian Capital Territory' ~ 'ACT',
-    TRUE ~ as.character(State)))
-
-popData %>%
-  group_by(State) %>%
-  summarise(pop = sum(`Total Persons`)) -> statePopulation
-
-popData %>%
-  group_by(`SA4 code`, State) %>%
-  summarise(pop = sum(`Total Persons`)) %>%
-  rename(SA4_CODE16 = `SA4 code`) -> sa4Population
-
-popData %>%
-  group_by(`SA2 code`, State) %>%
-  summarise(pop = sum(`Total Persons`)) %>%
-  rename(SA2_CODE16 = `SA2 code`) -> sa2Population
+    TRUE ~ as.character(State))) %>% filter(Weekly_Household_Income =="$8,000 or more"|Household_Composition == "Total Households")
+#Might need to change Column names before this step
 
 
-## SA4 
-sa4Shp <- rgdal::readOGR('SA4')
-sa4Small <- rmapshaper::ms_simplify(sa4Shp, keep = 0.02)
-load("data/sa4Small.Rda")
-
-sa4_data <- sa4Small@data
-sa4_data$id <- row.names(sa4_data)
-sa4_data$SA4_CODE16 <- as.integer(as.character(sa4_data$SA4_CODE16))
-sa4_map <- ggplot2::fortify(sa4Small)
-sa4_map$group <- paste("g",sa4_map$group,sep=".")
-sa4_map$piece <- paste("p",sa4_map$piece,sep=".")
-
-sa4_data %>%
-  select(id, SA4_CODE16, SA4_NAME16, AREASQKM16) %>%
-  rename(name = SA4_NAME16, Area_SqKm =AREASQKM16) %>%
-  #right_join(sa4Population) %>%
-  right_join(., sa4_map) -> sa4_map
-
-ggplot(sa4_map) + geom_polygon(aes(long, lat, group = group), colour = 'grey')
+IncomeData %>%
+  group_by(LGA_2016) %>%
+  summarise(NOP_8000AUDpweek = sum(`Value`)) -> LGA_Income
 
 
 ## LGA
@@ -73,14 +48,18 @@ LGA_data$LGA_CODE16 <- as.integer(as.character(LGA_data$LGA_CODE16))
 LGA_map <- ggplot2::fortify(LGA_subset)
 LGA_map$group <- paste("g",LGA_map$group,sep=".")
 LGA_map$piece <- paste("p",LGA_map$piece,sep=".")
-# 
-# sa2_data %>%
-#   select(id, SA2_CODE16, SA2_NAME16) %>%
-#   rename(name = SA2_NAME16) %>%
-#   right_join(sa2Population) %>%
-#   right_join(sa2_map)-> sa2_map
-# 
-# ggplot(sa2_map) + geom_polygon(aes(long, lat, group = group), colour = 'grey')
+library(ggplot2)
+ggplot(LGA_map) + geom_polygon(aes(long, lat, group = group), colour = 'grey')
+
+
+LGA_data %>%
+select(id, LGA_CODE16, LGA_NAME16) %>%
+rename(name = LGA_NAME16) %>%
+right_join(IncomeData,by=c("LGA_CODE16" = "LGA_2016")) %>%
+  right_join(LGA_map)-> LGA_map_2
+
+ 
+ggplot(LGA_map_2) + geom_polygon(aes(long, lat, group = group), colour = 'grey')
 # 
 
 ## Electorates
