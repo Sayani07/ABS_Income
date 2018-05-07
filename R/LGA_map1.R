@@ -26,13 +26,21 @@ IncomeData <- readr::read_csv('Data/Income_Data.csv') %>%
     State == 'Tasmania' ~ 'TAS',
     State == 'Northern Territory' ~ 'NT',
     State == 'Australian Capital Territory' ~ 'ACT',
-    TRUE ~ as.character(State))) %>% filter(Weekly_Household_Income =="$4,500-$4,999"|Household_Composition == "Total Households")
+    TRUE ~ as.character(State))) %>% filter(Weekly_Household_Income =="$1,000-$1,249"|Household_Composition == "Total Households")
 #Might need to change Column names before this step
 
 
 IncomeData %>%
   group_by(LGA_2016) %>%
   summarise(NOP_8000AUDpweek = sum(`Value`)) -> LGA_Income
+
+#line plot of distribution of number of households across LGAs
+IncomeData_r %>%
+  group_by(LGA_2016) %>%
+  summarise(NOP_WHI = sum(`Value`)) -> LGA_Income_r
+
+ggplot(IncomeData_r,aes(x=LGA_2016,y=Value))+geom_line()+ylab("# of households")+xlab("LGA")
+
 
 
 ## LGA
@@ -43,6 +51,42 @@ LGAShp <- rgdal::readOGR('LGA_shapefiles',layer="LGA_2016_AUST")
 # for topologically-aware polygon simplification
 LGA_subset <- rmapshaper::ms_simplify(LGAShp, keep = 0.05)
 save(LGA_subset,file = "Data/GA_subset.Rda")
+
+#Some LGA codes not in LGAData but present in Income Data
+#For which income level are available but no shape file available
+#Deleting those LGA codes for the purpose of carrying out further analysis
+
+
+LGA_data <- LGA_subset@data
+
+LGA_data$id <- row.names(LGA_data)
+LGA_data$LGA_CODE16 <- as.integer(as.character(LGA_data$LGA_CODE16))
+D = setdiff(IncomeData$LGA_2016,LGA_data$LGA_CODE16)
+IncomeData_r = IncomeData[-which(IncomeData$LGA_2016 %in% D),]
+
+
+
+IncomeData_r %>%
+  group_by(LGA_2016) %>%
+  summarise(NOP_WHI = sum(`Value`)) -> LGA_Income_r
+
+
+LGA_data$id <- row.names(LGA_data)
+LGA_data$LGA_CODE16 <- as.integer(as.character(LGA_data$LGA_CODE16))
+LGA_map <- ggplot2::fortify(LGA_subset)
+LGA_map$group <- paste("g",LGA_map$group,sep=".")
+LGA_map$piece <- paste("p",LGA_map$piece,sep=".")
+library(ggplot2)
+ggplot(LGA_map) + geom_polygon(aes(long, lat, group = group), colour = 'grey')
+
+LGA_data %>%
+  select(id, LGA_CODE16, LGA_NAME16) %>%
+  rename(name = LGA_NAME16) %>%
+  right_join(IncomeData_r,by=c("LGA_CODE16" = "LGA_2016")) %>%
+  right_join(LGA_map)-> LGA_map_2
+
+
+ggplot(LGA_map_2) + geom_polygon(aes(long, lat, group = group,fill=Value))
 
 #Creating k nearest Neighbours
 # knn2nb converts a knn object returned by knearneigh into a neighbours list of class nb with a list of integer vectors containing neighbour region number ids.
@@ -88,11 +132,91 @@ Weights_B <- nb2listw(LGA_nn_1,style="B")
 Weights_C <- nb2listw(LGA_nn_1,style= "C")
 Weights_U <- nb2listw(LGA_nn_1,style="U")
 Weights_S <- nb2listw(LGA_nn_1,style="S")
+#If global linear spatial association exists
+moran.test(LGA_Income_r$NOP_WHI, Weights_W)
+#Spatial dependence is there as p-value is very low
+#Moran I statistic       Expectation          Variance 
+#0.496028646      -0.001838235       0.002188406 
+#If correlation coefficient is close to 1, it means there is no variation betweeen data points and line of best fit
+#Here Moran's statistic is 0.49, implying there are large variation between data points and line of best fit. However, major variation
+#comes from the outliers.For most of the points, it seems to give a good fit. 
+
+summary(moran.plot(LGA_Income_r$NOP_WHI, Weights_W))
+
+
+local_Moran <- localmoran(LGA_Income_r$NOP_WHI, Weights_W)
+summary(local_Moran)
+#creating scaled resonse variable
+LGA_Income_r$NOP_WHI_s <- scale(LGA_Income_r$NOP_WHI)  %>% as.vector()
+# create a spatially lagged variable and save it to a new column
+LGA_Income_r$NOP_WHI_s_lag <- scale(lag.listw(Weights_W, LGA_Income_r$NOP_WHI))%>%as.vector()
+# summary of variables, to inform the analysis
+summary(LGA_Income_r$NOP_WHI_s)
+summary(LGA_Income_r$NOP_WHI_s_lag)
+
+
+
+LGA_Income_r$quad_sig <- NA
+
+# high-high quadrant
+LGA_Income_r[(LGA_Income_r$NOP_WHI_s >= 0 & 
+                LGA_Income_r$NOP_WHI_s_lag >= 0) & 
+               (local_Moran[, 5] <= 0.05), "quad_sig"] <- "high-high"
+# low-low quadrant
+
+LGA_Income_r[(LGA_Income_r$NOP_WHI_s <= 0 & 
+                LGA_Income_r$NOP_WHI_s_lag <= 0) & 
+               (local_Moran[, 5] <= 0.05), "quad_sig"] <- "low-low"
+
+# high-low quadrant
+
+LGA_Income_r[(LGA_Income_r$NOP_WHI_s >= 0 & 
+                LGA_Income_r$NOP_WHI_s_lag <= 0) & 
+               (local_Moran[, 5] <= 0.05), "quad_sig"] <- "high-low"
+
+# low-high quadrant
+
+LGA_Income_r[(LGA_Income_r$NOP_WHI_s <= 0 & 
+                LGA_Income_r$NOP_WHI_s_lag >= 0) & 
+               (local_Moran[, 5] <= 0.05), "quad_sig"] <- "low-high"
+
+
+# non-significant observations
+LGA_Income_r[(local_Moran[, 5] > 0.05), "quad_sig"] <- "not signif."  
+
+
+LGA_Income_r %>% 
+  group_by(quad_sig) %>% 
+  tally()
+
+df <- fortify(LGA_Income_r, LGA_2016="id")
+df <- left_join(df, oregon.tract@data)
+df %>% 
+  ggplot(aes(long, lat, group = group, fill = quad_sig)) + 
+  geom_polygon(color = "white", size = .05)  + coord_equal() + 
+  theme_void() + scale_fill_brewer( palette = "Set1")
+
+
+# plotting the map
+df <- fortify(LGA_Income_r, region="LGA_2016")
+df1 <- left_join(df, LGA_data,by=c("LGA_2016"="LGA_CODE16"))
+df1 %>% 
+  ggplot(aes(long, lat, group = group, fill = quad_sig)) + 
+  geom_polygon(color = "white", size = .05)  + coord_equal() + 
+  theme_void() + scale_fill_brewer( palette = "Set1")
+
+
+df %>% right_join(IncomeData_r) %>%right_join(LGA_data,by=c("LGA_2016"="LGA_CODE16")) %>% right_join(LGA_map)-> LGA_map_3
+
+LGA_map_3 %>% 
+    ggplot(aes(long, lat, group = group, fill = quad_sig)) + 
+    geom_polygon(color = "white", size = .05)  + coord_equal() + 
+    theme_void() + scale_fill_brewer( palette = "Set1")
 
 names(Weights_W)
 names(attributes(Weights_W))
 1/rev(range(card(Weights_W$neighbours)))
-summary(unlist(Sy0_lw_W$weights))
+summary(unlist(Weights_W$weights))
 set.seed(987654)
 n <- length(LGA_nn_1)
 uncorr_x <- rnorm(n)
@@ -100,26 +224,7 @@ rho <- 0.5
 autocorr_x <- invIrW(Weights_W, rho) %*% uncorr_x
 
 
-LGA_data <- LGA_subset@data
-LGA_data$id <- row.names(LGA_data)
-LGA_data$LGA_CODE16 <- as.integer(as.character(LGA_data$LGA_CODE16))
-LGA_map <- ggplot2::fortify(LGA_subset)
-LGA_map$group <- paste("g",LGA_map$group,sep=".")
-LGA_map$piece <- paste("p",LGA_map$piece,sep=".")
-library(ggplot2)
-ggplot(LGA_map) + geom_polygon(aes(long, lat, group = group), colour = 'grey')
-
-moran.plot()
-
-LGA_data %>%
-  select(id, LGA_CODE16, LGA_NAME16) %>%
-  rename(name = LGA_NAME16) %>%
-  right_join(IncomeData,by=c("LGA_CODE16" = "LGA_2016")) %>%
-  right_join(LGA_map)-> LGA_map_2
-
-
-ggplot(LGA_map_2) + geom_polygon(aes(long, lat, group = group,fill=Value))
-
+##Done till here
 ##With LGA_map_2
 
 coords= LGA_map_2[,c("long","lat")]
@@ -169,8 +274,14 @@ names(Weights_W)
 names(attributes(Weights_W))
 1/rev(range(card(Weights_W$neighbours)))
 summary(unlist(Sy0_lw_W$weights))
-set.seed(987654)
+set.seed(987654)   
 n <- length(LGA_nn_1)
 uncorr_x <- rnorm(n)
 rho <- 0.5
 autocorr_x <- invIrW(Weights_W, rho) %*% uncorr_x
+
+
+
+
+lmoran <- localmoran(oregon.tract$white, listw)
+summary(lmoran)
