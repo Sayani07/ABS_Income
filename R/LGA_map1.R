@@ -111,9 +111,6 @@ ggplot(LGA_map) + geom_polygon(aes(long, lat, group = group), colour = 'grey')
 
 moran.plot()
 
-
-
-
 LGA_data %>%
   select(id, LGA_CODE16, LGA_NAME16) %>%
   rename(name = LGA_NAME16) %>%
