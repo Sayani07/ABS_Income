@@ -27,7 +27,7 @@ IncomeData <- readr::read_csv('Data/Income_Data.csv') %>%
     State == 'Northern Territory' ~ 'NT',
     State == 'Australian Capital Territory' ~ 'ACT',
     TRUE ~ as.character(State))) %>% filter(Weekly_Household_Income =="$1,000-$1,249"|Household_Composition == "Total Households")
-#Might need to change Column names before this step
+
 
 
 IncomeData %>%

@@ -1,0 +1,368 @@
+
+---
+title: Implementation of LISA - Variation  of Income across different LGAs in Australia 
+date: May 9, 2018
+output: beamer_presentation
+---
+
+#From where did we get the Data
+
+##Income Data Source
+
+- Australian Bureau Of Statistics (http://stat.data.abs.gov.au) 
+- Economy -> Finance -> Household Income -> Census 2016, Total Household Income (Weekly) by    Household Composition (LGA)
+- Customise layout():   
+                       Page -  Census Year, Household Composition  
+                       Row - State, Region, Geography Level  
+                       Column - Total Household Income Weekly 
+                       
+#From where did we get the Data  
+
+##Shapefile Data Source
+
+- Australian Bureau Of Statistics (http://www.abs.gov.au/AUSSTATS/abs@.nsf/DetailsPage/1270.0.55.003July%202016?OpenDocument)
+
+- Name of the file (Zip) to download: Local Government Areas ASGS Ed 2016 Digital Boundaries in ESRI Shapefile Format 
+
+#How does the Data look
+```{r setup, include=FALSE,}
+library(dplyr)
+library(magrittr)
+library(knitr)
+library(readr)
+library(ggplot2)
+library(spdep)
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+
+```{r Raw Data,echo=FALSE,warnings=FALSE}
+IncomeData <- read_csv('Data/Income_Data.csv',col_types = cols()) 
+IncomeData[,c("Weekly_Household_Income","Annual_Household_Income","State","LGA_2016","Region","Value")]
+```
+#Analysis
+
+- Number of people for each income category provided for each regions.  
+- For a broad overview of the income distribution across different LGAs in Australia, weekly household income categorised into the following sections:
+  
+  - Low: Household Weekly Income less than 500A$
+  - Medium: Household Weekly Income from 500A$ to 1500A$
+  - High: Household Weekly Income Above A$1500 (ranges from A$1500 to A$8000 and beyond)
+
+The key Average Weekly Earnings figures as provided in  
+Average Weekly Earnings, Australia, Nov 2017  
+(http://www.abs.gov.au/ausstats/abs@.nsf/mf/6302.0) is 1567 A$. Hence, the medium income range is defined in that range.
+
+#Analysis
+
+##Table2
+```{r print-lga-income,echo=FALSE, dependson='show-income-data'}
+Cat_Income <- IncomeData %>%
+  mutate(State = case_when(
+    State == 'New South Wales' ~ 'NSW',
+    State == 'Victoria' ~ 'VIC',
+    State == 'Queensland' ~ 'QLD',
+    State == 'South Australia' ~ 'SA',
+    State == 'Western Australia' ~ 'WA',
+    State == 'Tasmania' ~ 'TAS',
+    State == 'Northern Territory' ~ 'NT',
+    State == 'Australian Capital Territory' ~ 'ACT',
+    TRUE ~ as.character(State)))%>%
+  mutate(
+    Weekly_Household_Income = case_when(
+      Weekly_Household_Income %in% c("$1-$149", "$150-$299", "$300-$399", "$400-$499") ~ 'Low',
+      Weekly_Household_Income %in% c(
+        "$500-$649",
+        "$650-$799",
+        "$800-$999",
+        "$1,000-$1,249",
+        "$1,250-$1,499" ) ~ 'Medium',
+        Weekly_Household_Income %in% c("$1,
+        500-$1,749","$1,500-$1,749",
+        "$1,750-$1,999","$2,000-$2,499","$2,500-$2,999","$3,000-$3,499","$3,500-$3,999","$4,000-$4,499","$4,500-$4,999"
+        ,"$5,000-$5,999","$6,000-$7,999","$8,000 or more") ~ 'High',TRUE~as.character(Weekly_Household_Income)
+    ))
+Cat_Income %>%
+  group_by(LGA_2016,Weekly_Household_Income) %>%
+  summarise(Number_People = sum(`Value`)) -> LGA_Income_catg
+LGA_Income_catg
+
+```
+#Analysis
+
+##Obtain one representative income for each LGA
+
+Weekly household median incomes assumed for each class:  
+  - Low: 250A$  
+  - Medium: 1000A$  
+  - High: 5000A$  
+
+
+
+```{r print-LGA Input,echo=FALSE}
+
+## LGA
+#Reading OGR vector maps into Spatial objects
+#The Geospatial Data Abstraction Library (GDAL) is a computer software library for reading and writing raster and vector geospatial data formats
+#The rgdal package has been around for more than a decade and provides bindings to the incredible Geospatial Data Abstraction Library (GDAL) for reading, writing and converting between spatial formats.
+LGAShp <- rgdal::readOGR('LGA_shapefiles',layer="LGA_2016_AUST")
+# for topologically-aware polygon simplification
+LGA_subset <- rmapshaper::ms_simplify(LGAShp, keep = 0.05)
+save(LGA_subset,file = "Data/GA_subset.Rda")
+
+#Some LGA codes not in LGAData but present in Income Data
+#For which income level are available but no shape file available
+#Deleting those LGA codes for the purpose of carrying out further analysis
+
+
+LGA_data <- LGA_subset@data
+
+LGA_data$id <- row.names(LGA_data)
+LGA_data$LGA_CODE16 <- as.integer(as.character(LGA_data$LGA_CODE16))
+LGA_data$id <- row.names(LGA_data)
+LGA_data$LGA_CODE16 <- as.integer(as.character(LGA_data$LGA_CODE16))
+LGA_map <- ggplot2::fortify(LGA_subset)
+LGA_map$group <- paste("g",LGA_map$group,sep=".")
+LGA_map$piece <- paste("p",LGA_map$piece,sep=".")
+```
+
+
+```{r print-Oneincome,echo=FALSE}
+Income_Median <- LGA_Income_catg %>% filter(Number_People>0)%>%mutate(Median_Income = case_when(Weekly_Household_Income=='Low'~ 250,
+  Weekly_Household_Income=='Medium'~1000,
+  Weekly_Household_Income=='High'~5000)
+)
+  
+  Income_Median %>%
+  group_by(LGA_2016) %>%
+  summarise(Median_Income_LGA = sum(`Number_People`*`Median_Income`)/sum(`Number_People`)) ->OneIncome_LGA
+```
+#HeatMap - Maps with Structural Breaks
+```{r print-Heatmap,echo=FALSE}
+LGA_data %>%
+  select(id, LGA_CODE16, LGA_NAME16) %>%
+  rename(name = LGA_NAME16) %>%
+  right_join(OneIncome_LGA,by=c("LGA_CODE16" = "LGA_2016")) %>%
+  right_join(LGA_map)-> LGA_map_Income
+
+ggplot(LGA_map_Income) + geom_polygon(aes(long, lat, group = group,fill=Median_Income_LGA)) + coord_fixed()
+
+```  
+
+```{r Allcode,echo=FALSE}
+
+#Creating k nearest Neighbours
+# knn2nb converts a knn object returned by knearneigh into a neighbours list of class nb with a list of integer vectors containing neighbour region number ids.
+coords <-coordinates(LGA_subset)
+length(coords)
+IDs <- row.names(as(LGA_subset, "data.frame"))
+LGA_nn_1 <- knn2nb(knearneigh(coords, k = 1), row.names = IDs)
+LGA_nn_2 <- knn2nb(knearneigh(coords, k = 2), row.names = IDs)
+LGA_nn_3 <- knn2nb(knearneigh(coords, k = 3), row.names = IDs)
+LGA_nn_4 <- knn2nb(knearneigh(coords, k = 4), row.names = IDs)
+```
+
+#Plotting nearest neighbors neighbours K=1
+
+```{r,echo=FALSE}
+plot(LGA_nn_1,coords)
+dsts <- unlist(nbdists(LGA_nn_1, coords,longlat=TRUE))
+max_1nn <- max(dsts)
+max_1nn
+```
+
+#Plotting nearest neighbors neighbours K=2
+
+```{r,echo=FALSE}
+plot(LGA_nn_2,coords)
+dsts <- unlist(nbdists(LGA_nn_2, coords,longlat=TRUE))
+max_1nn <- max(dsts)
+max_1nn
+```
+
+#Plotting nearest neighbors neighbours K=3
+
+```{r,echo=FALSE}
+plot(LGA_nn_3,coords)
+dsts <- unlist(nbdists(LGA_nn_3, coords,longlat=TRUE))
+max_1nn <- max(dsts)
+max_1nn
+```
+
+#Plotting nearest neighbors neighbours K=4
+
+```{r,echo=FALSE}
+plot(LGA_nn_3,coords)
+dsts <- unlist(nbdists(LGA_nn_4, coords,longlat=TRUE))
+max_1nn <- max(dsts)
+max_1nn
+```
+
+```{r,echo=FALSE}
+# Checking if the neighbours object is symmetric
+
+nb_list <- list(k1 = LGA_nn_1, k2 = LGA_nn_2, k3=LGA_nn_1, k4 = LGA_nn_1)
+sapply(nb_list, function(x) is.symmetric.nb(x, verbose = FALSE,force = TRUE))
+#If need be, k-nearest neighbour objects can be made symmetrical using the make.sym.nb function
+LGA_nn_1 <- make.sym.nb(LGA_nn_1)
+
+#To calculate a list of vectors of distances
+#corresponding to the neighbour object for first nearest neighbours. The
+#greatest value will be the minimum distance needed to make sure that all the
+#areas are linked to at least one neighbour
+dsts <- unlist(nbdists(LGA_nn_1, coords,longlat=TRUE))
+summary(dsts)
+max_1nn <- max(dsts)
+max_1nn
+
+#nb2listw function takes a neighbours list object and converts it into a weights object
+#For style="W", the weights vary between unity divided by the largest and
+#smallest numbers of neighbours, and the sums of weights for each areal entity
+#are unity  
+#B is the basic binary coding
+
+Weights_W <- nb2listw(LGA_nn_1,style="W")
+Weights_B <- nb2listw(LGA_nn_1,style="B")
+Weights_C <- nb2listw(LGA_nn_1,style= "C")
+Weights_U <- nb2listw(LGA_nn_1,style="U")
+Weights_S <- nb2listw(LGA_nn_1,style="S")
+
+#Weights and Neighbors same as LGA_map1.R
+```
+
+#Moran Scatterplot
+
+```{r,echo=FALSE}
+Moran_test <-moran.test(OneIncome_LGA$Median_Income_LGA, Weights_W)
+moran.plot(OneIncome_LGA$Median_Income_LGA, Weights_W)
+```        
+
+#Local Moran
+```{r,echo=FALSE}
+#Local measures of spatial autocorrelation
+local_Moran <- localmoran(OneIncome_LGA$Median_Income_LGA, Weights_W)
+summary(local_Moran)
+```
+
+#Local Significance Plot using Moran's Statistic
+
+```{r,echo=FALSE}
+#creating scaled resonse variable
+OneIncome_LGA$Median_Income_LGA_s <- scale(OneIncome_LGA$Median_Income_LGA)  %>% as.vector()
+# create a spatially lagged variable and save it to a new column
+OneIncome_LGA$Median_Income_LGA_s_lag <- scale(lag.listw(Weights_W,OneIncome_LGA$Median_Income_LGA))%>%as.vector()
+# summary of variables, to inform the analysis
+#summary(OneIncome_LGA$Median_Income_LGA_s)
+#summary(OneIncome_LGA$Median_Income_LGA_s_lag)
+
+
+OneIncome_LGA$local_Moran_stat <- NA
+
+# high-high quadrant
+OneIncome_LGA[(OneIncome_LGA$Median_Income_LGA_s >= 0 & 
+                 OneIncome_LGA$Median_Income_LGA_s_lag >= 0) & 
+               (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "high-high"
+# low-low quadrant
+
+OneIncome_LGA[(OneIncome_LGA$Median_Income_LGA_s <= 0 & 
+                 OneIncome_LGA$Median_Income_LGA_s_lag <= 0) & 
+               (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "low-low"
+
+# high-low quadrant
+
+OneIncome_LGA[(OneIncome_LGA$Median_Income_LGA_s >= 0 & 
+                 OneIncome_LGA$Median_Income_LGA_s_lag  <= 0) & 
+               (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "high-low"
+
+# low-high quadrant
+
+OneIncome_LGA[(OneIncome_LGA$Median_Income_LGA_s <= 0 & 
+                 OneIncome_LGA$Median_Income_LGA_s_lag >= 0) & 
+               (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "low-high"
+
+
+# non-significant observations
+OneIncome_LGA[(local_Moran[, 5] > 0.05), "local_Moran_stat"] <- "not signif."  
+
+
+OneIncome_LGA %>% 
+  group_by(local_Moran_stat) %>% 
+  tally()
+```
+
+#Local Significance Plot using Moran's Statistic
+
+```{r,echo=FALSE}
+# plotting the map for local_Morans
+df_OneIncome <- fortify(OneIncome_LGA, region="LGA_2016")
+df_OneIncome %>% right_join(OneIncome_LGA) %>%right_join(LGA_data,by=c("LGA_2016"="LGA_CODE16")) %>% right_join(LGA_map)-> LGA_OneIncome
+
+LGA_OneIncome %>% 
+  ggplot(aes(long, lat, group = group, fill = local_Moran_stat)) + 
+  geom_polygon(color = "white", size = .05)  + coord_equal() + 
+  theme_void() + scale_fill_brewer( palette = "Set1") +coord_fixed()
+```
+
+#Local Significance Plot using Gi star Statistic
+
+```{r,echo=FALSE,warning=FALSE}
+#G and Gstar local spatial statistics
+local_G <-localG(OneIncome_LGA$Median_Income_LGA, Weights_W)
+summary(local_G)
+
+local_G_new<- NA
+
+local_G_new[local_G >= 1.96] <- "high-high"
+local_G_new[(local_G <= -1.96)] <- "low-low"
+local_G_new[(-1.96<local_G)& (local_G<1.96)] <- "not_signif."
+
+LGA_OneIncome_r=cbind(OneIncome_LGA,local_G_new)
+
+LGA_OneIncome_r %>% 
+  group_by(local_G_new) %>% 
+  tally()
+```
+
+#Local Significance Plot using Gi star Statistic
+
+```{r,echo=FALSE,warning=FALSE}
+# plotting the map
+df_Gstar_OneIn <- fortify(LGA_OneIncome_r, region="LGA_2016")
+
+df_Gstar_OneIn %>% right_join(OneIncome_LGA) %>%right_join(LGA_data,by=c("LGA_2016"="LGA_CODE16")) %>% right_join(LGA_map)-> LGA_OneIncome_Gstar
+
+LGA_OneIncome_Gstar %>% 
+  ggplot(aes(long, lat, group = group, fill = local_G_new)) + 
+  geom_polygon(color = "white", size = .05)  + coord_equal() + 
+  theme_void() + scale_fill_brewer( palette = "Set1")+ coord_fixed()
+```
+
+#Regions spatially significant in local Moran and not in local Gi star 
+
+```{r,echo=FALSE}
+#LGA_map_4 %>% filter(local_Moran_stat == c(""high-high","low-low"))
+##LGA where local Moran stat is significant and high high
+LGA_OneIncome_Gstar %>% 
+  group_by(local_Moran_stat,LGA_NAME16,STE_NAME16) %>% filter(local_Moran_stat=="high-high") %>% tally() ->Moran_High_High
+
+LGA_OneIncome_Gstar %>% 
+  group_by(local_Moran_stat,LGA_NAME16,STE_NAME16) %>% filter(local_Moran_stat=="low-low")%>%tally()->Moran_low_low
+##LGA where local  G stat is significant and high high
+LGA_OneIncome_Gstar %>% 
+  group_by(local_G_new,LGA_NAME16,STE_NAME16) %>% filter(local_G_new=="high-high")%>%tally()->G_High_High
+
+
+LGA_OneIncome_Gstar %>% 
+  group_by(local_G_new,LGA_NAME16,STE_NAME16) %>% filter(local_G_new=="low-low") %>%tally()->G_low_low
+
+#spatially significant in local Moran but not in local Gi
+Moran_not_G = setdiff(Moran_High_High$LGA_NAME16,G_High_High$LGA_NAME16)
+kable(Moran_not_G,longtable=TRUE)
+```
+
+#Regions spatially significant in local Moran and not in local Gi star 
+
+```{r,echo=FALSE}
+G_not_Moran = setdiff(G_High_High$LGA_NAME16,Moran_High_High$LGA_NAME16)
+kable(G_not_Moran,longtable=TRUE)
+```
