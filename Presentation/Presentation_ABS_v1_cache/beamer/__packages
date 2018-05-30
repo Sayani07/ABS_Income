@@ -1,0 +1,11 @@
+base
+dplyr
+magrittr
+knitr
+readr
+ggplot2
+sp
+Matrix
+spData
+spdep
+bindrcpp
