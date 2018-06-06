@@ -12,8 +12,8 @@ output: beamer_presentation
 
 - Spatial Dependence : Existemce of functional relationship between what happens at one point in      space and what happens elsewhere
 - Spatial Heterogeneity: lack of uniformity of effect of space
-  Example: Urban places have unequal population and income levels
-  
+Example: Urban places have unequal population and income levels
+
 #Why Spatial Econometrics
 
 ##Neighbors in Space
@@ -22,18 +22,18 @@ Expressing a way the structure of spatial dependence is to be incorporated in a 
 
 - Lagged variable in time series analysis is unambiguous
 - Spatial Lag?
-    - Neighborhood and nearest neighbor
-     {j | P([x_i])$\neq$ P[x_i|x_j] and d_ij < \(\epsilon\)}
+- Neighborhood and nearest neighbor
+{j | P([x_i])$\neq$ P[x_i|x_j] and d_ij < \(\epsilon\)}
 
 #Why Spatial Econometrics
 
 ##Spatial Contiguity Matrices
 
 - Binary Contiguity Matrix
-  - Rook Contiguity: sides
-  - Bishop Contiguity: corners
-  - Queen Contiguity sides and corners
-  
+- Rook Contiguity: sides
+- Bishop Contiguity: corners
+- Queen Contiguity sides and corners
+
 For irregularly spaced grid, determination of contiguity is not unique 
 
 - Distance Based Weights
@@ -48,10 +48,10 @@ For irregularly spaced grid, determination of contiguity is not unique
 - Australian Bureau Of Statistics (http://stat.data.abs.gov.au) 
 - Economy -> Finance -> Household Income -> Census 2016, Total Household Income (Weekly) by    Household Composition (LGA)
 - Customise layout():   
-                       Page -  Census Year, Household Composition  
-                       Row - State, Region, Geography Level  
-                       Column - Total Household Income Weekly 
-                       
+Page -  Census Year, Household Composition  
+Row - State, Region, Geography Level  
+Column - Total Household Income Weekly 
+
 #From where did we get the Data  
 
 ##Shapefile Data Source
@@ -68,13 +68,24 @@ library(knitr)
 library(readr)
 library(ggplot2)
 library(spdep)
+library(tidyverse)
 knitr::opts_chunk$set(cache=TRUE)
 ```
 
 
 ```{r Raw Data,echo=FALSE,warnings=FALSE}
-IncomeData <- read_csv('../Data/Income_Data.csv',col_types = cols()) 
-IncomeData[,c("Weekly_Household_Income","Annual_Household_Income","State","LGA_2016","Region","Value")]
+IncomeData <- readr::read_csv('Data/Income_Data.csv') %>%
+  mutate(State = case_when(
+    State == 'New South Wales' ~ 'NSW',
+    State == 'Victoria' ~ 'VIC',
+    State == 'Queensland' ~ 'QLD',
+    State == 'South Australia' ~ 'SA',
+    State == 'Western Australia' ~ 'WA',
+    State == 'Tasmania' ~ 'TAS',
+    State == 'Northern Territory' ~ 'NT',
+    State == 'Australian Capital Territory' ~ 'ACT',
+    TRUE ~ as.character(State))) %>% filter(Weekly_Household_Income =="$1,000-$1,249"|Household_Composition == "Total Households")
+
 ```
 #Analysis
 
@@ -85,38 +96,7 @@ IncomeData[,c("Weekly_Household_Income","Annual_Household_Income","State","LGA_2
 #Analysis
 
 ##Table2
-```{r print-lga-income,echo=FALSE, dependson='show-income-data'}
-Cat_Income <- IncomeData %>%
-  mutate(State = case_when(
-    State == 'New South Wales' ~ 'NSW',
-    State == 'Victoria' ~ 'VIC',
-    State == 'Queensland' ~ 'QLD',
-    State == 'South Australia' ~ 'SA',
-    State == 'Western Australia' ~ 'WA',
-    State == 'Tasmania' ~ 'TAS',
-    State == 'Northern Territory' ~ 'NT',
-    State == 'Australian Capital Territory' ~ 'ACT',
-    TRUE ~ as.character(State)))%>%
-  mutate(
-    Weekly_Household_Income = case_when(
-      Weekly_Household_Income %in% c("$1-$149", "$150-$299", "$300-$399", "$400-$499") ~ 'Low',
-      Weekly_Household_Income %in% c(
-        "$500-$649",
-        "$650-$799",
-        "$800-$999",
-        "$1,000-$1,249",
-        "$1,250-$1,499" ) ~ 'Medium',
-        Weekly_Household_Income %in% c("$1,
-        500-$1,749","$1,500-$1,749",
-        "$1,750-$1,999","$2,000-$2,499","$2,500-$2,999","$3,000-$3,499","$3,500-$3,999","$4,000-$4,499","$4,500-$4,999"
-        ,"$5,000-$5,999","$6,000-$7,999","$8,000 or more") ~ 'High',TRUE~as.character(Weekly_Household_Income)
-    ))
-Cat_Income %>%
-  group_by(LGA_2016,Weekly_Household_Income) %>%
-  summarise(Number_People = sum(`Value`)) -> LGA_Income_catg
-LGA_Income_catg
 
-```
 #Analysis
 
 ```{r, plotData}
@@ -124,41 +104,7 @@ Inc_cats <- c("$1-$149","$150-$299","$300-$399",     "$400-$499","$500-$649","$6
 
 Inc_cats_x <- c(75,225,350,450,575, 725, 900, 1125,1375,1625,1875,2250,2750,3250,3750,4250,4750,5500,7000,9000)
 
-IncomeData_R <- Income_Data %>%
-  mutate(Weekly_Household_Income = case_when(
-    Weekly_Household_Income == "$1-$149" ~ "75",
-    Weekly_Household_Income == "$150-$299" ~ "225",
-    Weekly_Household_Income == "$300-$399" ~ "350",
-    Weekly_Household_Income == "$400-$499" ~ "450",
-    Weekly_Household_Income == "$500-$649" ~ "575",
-    Weekly_Household_Income == "$650-$799" ~ "725",
-    Weekly_Household_Income == "$800-$999" ~ "900",
-    Weekly_Household_Income == "$1,000-$1,249" ~ "1125",
-    Weekly_Household_Income == "$1,250-$1,499" ~ "1375",
-    
-    
-    Weekly_Household_Income == "$2,000-$2,499" ~ "2250",
-    Weekly_Household_Income == "$2,500-$2,999" ~ "2750",
-    Weekly_Household_Income == "$3,000-$3,499" ~ "3750",
-    Weekly_Household_Income == "$3,500-$3,999" ~ "4250",
-    Weekly_Household_Income == "$4,000-$4,499" ~ "4750",
-    Weekly_Household_Income == "$4,500-$4,999" ~ "5500",
-    Weekly_Household_Income == "$5,000-$5,999" ~ "7000",
-    Weekly_Household_Income == "$6,000-$7,999" ~ "9000",
-    TRUE ~ as.character(Weekly_Household_Income)))
-
 # <- data.frame(Categories = Inc_cats, )
-
-ggplot(IncomeData_R) + geom_density(aes(x=as.numeric(Weekly_Household_Income), y= Value), stat ="Identity")
-ggplot(Income_Data) + geom_density(aes(x=Weekly_Household_Income, y= Value), stat ="Identity")+ coord_flip()
-
-# Basic ECDF plot
-ggplot(IncomeData_R, aes(x=as.numeric(Weekly_Household_Income), y= Value)) + stat_ecdf(geom = "step")
-
-+
-labs(title="Empirical Cumulative \n Density Function",
-     y = "F(height)", x="Height in inch")+
-theme_classic()
 
 ```
 
@@ -166,54 +112,75 @@ theme_classic()
 
 Inc_cats <- c("$1-$149","$150-$299","$300-$399",     "$400-$499","$500-$649","$650-$799","$800-$999","$1,000-$1,249", "$1,250-$1,499",  "$1,500-$1,749",  "$1,750-$1,999", "$2,000-$2,499", "$2,500-$2,999", "$3,000-$3,499", "$3,500-$3,999", "$4,000-$4,499",  "$4,500-$4,999",  "$5,000-$5,999", "$6,000-$7,999", "$8,000 or more")
 
-Income_Data %>%
+IncomeData%>%
   mutate(Weekly_Household_Income =  factor(Weekly_Household_Income, levels = Inc_cats)) %>%
   arrange(LGA_2016, Weekly_Household_Income) %>% filter(HHCD_2016=="TOT") -> Income_Data_new
 
-Income_Data_new %>%group_by(LGA_2016) %>% mutate(CDF = cumsum(Value)/sum(Value)) -> LGA_cumsum
+#Removing LGAs for which the sum of values across different income levels is zero
+g<-Income_Data_new%>%group_by(LGA_2016)%>%summarize(suml=sum(Value))%>%filter(suml!=0)
+Income_Data_new%>%filter(LGA_2016 %in% g$LGA_2016) -> Income_Data_new_2
 
-plot_LGA <- function(code, showquantiles=seq(0.1,0.9,by=0.1)) #Input LGA_code
+
+#Finding the CDF for each LGAs
+Income_Data_new_2 %>%group_by(LGA_2016) %>% mutate(CDF = cumsum(Value)/sum(Value)) -> LGA_cumsum
+
+#Splitting Weekly_Income into lower and upper boundary and Correcting the row $8000 and more
+LGA_cumsum %>% separate(Weekly_Household_Income,into = c("lb","ub"),sep="-") %>% mutate(lb =ifelse(lb=="$8,000 or more","$8,000",lb))%>% replace_na(list(ub="$9999"))-> LGA_Split
+
+
+#Removing dollars and converting the lower and upper boundary to numeric vectors
+LGA_Split%>% mutate(lb = str_replace_all(lb,'\\$','') )%>% mutate(ub = str_replace_all(ub,'\\$','') ) -> LGA_split_v1
+
+LGA_split_v1%>% mutate(lb = as.numeric(str_replace_all(lb,'\\,','')) )%>% mutate(ub = as.numeric(str_replace_all(ub,'\\,',''))+1 ) -> LGA_split_v2
+
+
+# Function joining lines between two points in a ECDF for each interval for each LGA(A way to find percentiles from the stepwise cumulative distribution function)
+#Each LGA would have number of lines = (No. of intervals - 1)
+
+plines_LGA = function(code)
 {
-
-  #subset of LGA_cumsum
-  code_row <- which(LGA_cumsum$LGA_2016 == code)
-  LGA_cumsum[code_row,] -> LGA_cumsum_Code
+  #subset of LGA_Split_v2
   
-  plot(LGA_cumsum_Code$Weekly_Household_Income,LGA_cumsum_Code$CDF,type="s",ylim = c(0,1), xlab = "Weekly Household Income")
-  abline(h=seq(0,1,0.1))
+  code_row <- which(LGA_split_v2$LGA_2016 == code)
+  LGA_split_v2[code_row,] -> CR
   
-
-LGA_percentile <- LGA_cumsum_Code %>%
-  mutate(HHCD_2016 =  case_when(
-     CDF>=0.9 ~ 'p9',
-     CDF>=0.8 ~ 'p8',
-     CDF>=0.7 ~ 'p7',
-     CDF>=0.6 ~ 'p6',
-     CDF>=0.5 ~ 'p5',
-     CDF>=0.4 ~ 'p4',
-     CDF>=0.3 ~ 'p3',
-     CDF>=0.2 ~ 'p2',
-     CDF>=0.1 ~ 'p1',
-     TRUE ~ as.character(HHCD_2016)))
-
-
-LGA_percentile %>%distinct(HHCD_2016, .keep_all=TRUE)%>%filter(HHCD_2016!="TOT") -> LG_per_uni
-
   
-return(LG_per_uni)
+  #plot(LGA_cumsum_Code$Weekly_Household_Income,LGA_cumsum_Code$CDF,type="s",ylim = c(0,1), xlab = "Weekly Household Income")
+  
+  p = ggplot(CR, aes(x=lb,y=CDF))+ geom_point() + geom_line() + geom_hline(yintercept = seq(0.1,0.9,0.1))
+  
+  p + scale_x_continuous(name= "Weekly_Income", breaks =       c(1,150,300,400,500,650,800,1000,1250,1500,1750,2000,2500,3000,3500,4000,4500,5000,6000,8000))
+  
+  slope<- diff(c(0, CR$CDF))/diff(c(0, CR$lb))
+  
+  intercept<- - CR$lb*slope + CR$CDF 
+  
+  
+  ##########  
+  quant.func<- function(y){
+    if(y > 1 || y < 0){return(warning('y MUST BE LESS THAN 1!'))}
+    if(y == 1){return(x<- CR$lb[length(CR$lb)])}
+    else{
+      indicator<- sum(y >= c(0, CR$CDF))
+      x<- (y - intercept[indicator])/slope[indicator]
+      return(x)
+    }
+  }
+  
+  y<- seq(0.1, 0.99, length.out = 99)
+  code_quantiles <- sapply(1:99, function(i) quant.func(y[i]))
+  
+  return(code_quantiles)
+  
 }
-
-
+code_list <-unique(LGA_split_v2$LGA_2016)
+LGA_prcntl_list <- lapply(code_list,plines_LGA)
+LGA_prcntl_mat <- matrix(unlist(LGA_prcntl_list),ncol=99,byrow=TRUE)
+LGA_prcntl_matv2<-cbind(code_list,LGA_prcntl_mat)
+colnames(LGA_prcntl_matv2)<-c("LGA_2016","p1","p2","p3","p4","p5","p6","p7","p8","p9","p10","p11","p12","p13","p14","p15","p16","p17","p18","p19","p20","p21","p22","p23","p24","p25","p26","p27","p28","p29","p30","p31","p32","p33","p34","p35","p36","p37","p38","p39","p40","p41","p42","p43","p44","p45","p46","p47","p48","p49","p50","p51","p52","p53","p54","p55","p56","p57","p58","p59","p60","p61","p62","p63","p64","p65","p66","p67","p68","p69","p70","p71","p72","p73","p74","p75","p76","p77","p78","p79","p80","p81","p82","p83","p84","p85","p86","p87","p88","p89","p90","p91","p92","p93","p94","p95","p96","p97","p98","p99")
 ```
+### LGA by percentile matrix done 
 
-
-
-##Obtain one representative income for each LGA
-
-Weekly household median incomes assumed for each class:  
-  - Low: 250A$  
-  - Medium: 1000A$  
-  - High: 5000A$  
 
 #Reading LGA Data
 
@@ -244,25 +211,35 @@ LGA_map$piece <- paste("p",LGA_map$piece,sep=".")
 ```
 
 
-```{r print-Oneincome,echo=FALSE}
-Income_Median <- LGA_Income_catg %>% filter(Number_People>0)%>%mutate(Median_Income = case_when(Weekly_Household_Income=='Low'~ 250,
-  Weekly_Household_Income=='Medium'~1000,
-  Weekly_Household_Income=='High'~5000)
-)
-  
-  Income_Median %>%
-  group_by(LGA_2016) %>%
-  summarise(Median_Income_LGA = sum(`Number_People`*`Median_Income`)/sum(`Number_People`)) ->OneIncome_LGA
-```
 #HeatMap - Maps with Structural Breaks
 ```{r print-Heatmap,echo=FALSE}
 LGA_data %>%
-  select(id, LGA_CODE16, LGA_NAME16) %>%
+  dplyr::select(id, LGA_CODE16, LGA_NAME16) %>%
   rename(name = LGA_NAME16) %>%
-  right_join(OneIncome_LGA,by=c("LGA_CODE16" = "LGA_2016")) %>%
+  right_join(as_tibble(LGA_prcntl_matv2),by=c("LGA_CODE16" = "LGA_2016")) %>%
   right_join(LGA_map)-> LGA_map_Income
 
-ggplot(LGA_map_Income) + geom_polygon(aes(long, lat, group = group,fill=Median_Income_LGA)) + coord_fixed()
+gather(LGA_map_Income,Percentile,percentile_values, -c(id,LGA_CODE16,name,long,lat,order,hole,piece,group)) ->LGA_map_Income2
+
+ggplot(LGA_map_Income) + geom_polygon(aes(long, lat, group = group,fill=p1)) + coord_fixed()
+ggplot(LGA_map_Income) + geom_polygon(aes(long, lat, group = group,fill=p50)) + coord_fixed()
+
+install.packages("devtools")
+
+# then gganimate
+devtools::install_github("dgrtwo/gganimate")
+
+library(gganimate)
+
+Aus <- ggplot(LGA_map_Income2) + geom_polygon(aes(long, lat, group = group,fill=percentile_values,frame=Percentile),color = "white", size = .05) + xlab("Latitude") +
+  ylab("Longitude")+ scale_fill_gradient(low = "darkgreen", high = "darkred")+ coord_fixed()
+
+Aus$Percentile <- factor(Aus$Percentile, levels = c(paste0("p", 1:99)) )
+
+#gganimate(Aus)
+#gganimate(Aus, interval = 1.5, filename = 'Aus_Economy.mp4')
+gganimate(Aus, interval = 1.5, ani.width = 1600, ani.height = 900, filename = 'Aus_Economy3.mp4')
+
 
 ```  
 
@@ -350,8 +327,8 @@ Weights_S <- nb2listw(LGA_nn_1,style="S")
 #Moran Scatterplot
 
 ```{r,echo=FALSE}
-Moran_test <-moran.test(OneIncome_LGA$Median_Income_LGA, Weights_W)
-moran.plot(OneIncome_LGA$Median_Income_LGA, Weights_W)
+Moran_test <-moran.test(LGA_map_Income$p1, Weights_W)
+moran.plot(LGA_map_Income$p1, Weights_W)
 ```        
 
 #Local Moran
@@ -378,24 +355,24 @@ OneIncome_LGA$local_Moran_stat <- NA
 # high-high quadrant
 OneIncome_LGA[(OneIncome_LGA$Median_Income_LGA_s >= 0 & 
                  OneIncome_LGA$Median_Income_LGA_s_lag >= 0) & 
-               (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "high-high"
+                (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "high-high"
 # low-low quadrant
 
 OneIncome_LGA[(OneIncome_LGA$Median_Income_LGA_s <= 0 & 
                  OneIncome_LGA$Median_Income_LGA_s_lag <= 0) & 
-               (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "low-low"
+                (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "low-low"
 
 # high-low quadrant
 
 OneIncome_LGA[(OneIncome_LGA$Median_Income_LGA_s >= 0 & 
                  OneIncome_LGA$Median_Income_LGA_s_lag  <= 0) & 
-               (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "high-low"
+                (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "high-low"
 
 # low-high quadrant
 
 OneIncome_LGA[(OneIncome_LGA$Median_Income_LGA_s <= 0 & 
                  OneIncome_LGA$Median_Income_LGA_s_lag >= 0) & 
-               (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "low-high"
+                (local_Moran[, 5] <= 0.05), "local_Moran_stat"] <- "low-high"
 
 
 # non-significant observations
